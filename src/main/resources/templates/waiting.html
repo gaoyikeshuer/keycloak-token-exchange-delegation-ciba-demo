@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Waiting for approval…</title>
+    <link rel="stylesheet" href="/css/app.css"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">Demo Support Console</div>
+</header>
+
+<main class="wrap">
+    <h1>Waiting for <span th:text="${targetUser}">user</span> to approve…</h1>
+    <p class="lede">
+        A request was pushed to the customer's device (CIBA). Open the customer's approval screen in a
+        separate window and click <b>Approve</b>. This page checks for the result automatically.
+    </p>
+
+    <div class="card">
+        <p>
+            <a href="/device" target="_blank" rel="noopener">Open the customer's approval screen ↗</a>
+        </p>
+        <p id="status" class="status">⏳ Waiting for approval…</p>
+        <p><a href="/">Cancel</a></p>
+    </div>
+</main>
+
+<script th:inline="none">
+    const statusEl = document.getElementById('status');
+    let stopped = false;
+
+    async function poll() {
+        if (stopped) return;
+        try {
+            const res = await fetch('/delegate/poll', {headers: {'Accept': 'application/json'}});
+            const data = await res.json();
+            if (data.status === 'pending') {
+                // keep waiting
+            } else if (data.status === 'done') {
+                stopped = true;
+                statusEl.textContent = '✔ Approved — issuing delegated token…';
+                window.location = '/';
+                return;
+            } else if (data.status === 'denied') {
+                stopped = true;
+                statusEl.textContent = '✖ The customer denied the request.';
+                return;
+            } else {
+                stopped = true;
+                statusEl.textContent = '⚠ ' + (data.detail || 'Something went wrong.');
+                return;
+            }
+        } catch (e) {
+            statusEl.textContent = '⚠ Lost connection to the server; retrying…';
+        }
+        setTimeout(poll, 3000);
+    }
+
+    setTimeout(poll, 1500);
+</script>
+</body>
+</html>

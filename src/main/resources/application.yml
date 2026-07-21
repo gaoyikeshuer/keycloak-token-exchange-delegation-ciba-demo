@@ -1,0 +1,40 @@
+server:
+  port: 8081
+
+demo:
+  keycloak:
+    base-url: ${KC_BASE_URL:http://localhost:8080}
+    realm: ${KC_REALM:demo}
+    client-id: ${KC_BACKEND_CLIENT_ID:demo-support-backend}
+    client-secret: ${KC_BACKEND_CLIENT_SECRET:backend-secret}
+
+
+# Admin (Admin) OIDC login. This registration is ONLY for logging Admin in and
+# capturing his access token (the actor_token). It can be the same Keycloak
+# client as above or a dedicated public/confidential login client.
+
+spring:
+  application:
+    name: te-delegation-ciba-demo
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            client-id: ${KC_ADMIN_CLIENT_ID:demo-admin-app}
+            client-secret: ${KC_ADMIN_CLIENT_SECRET:admin-app-secret}
+            authorization-grant-type: authorization_code
+            scope:
+              - openid
+              - profile
+              - email
+            redirect-uri: "{baseUrl}/login/oauth2/code/keycloak"
+        provider:
+          keycloak:
+            issuer-uri: ${KC_BASE_URL:http://localhost:8080}/realms/${KC_REALM:demo}
+            user-name-attribute: preferred_username
+
+logging:
+  level:
+    com.acme.tedemo: DEBUG

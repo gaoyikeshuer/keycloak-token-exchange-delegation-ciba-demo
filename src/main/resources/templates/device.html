@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta http-equiv="refresh" content="4"/>
+    <title>Your approvals</title>
+    <link rel="stylesheet" href="/css/app.css"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">📱 Customer device — Approvals</div>
+    <div class="who">
+        Signed in as <strong th:text="${customer}">user</strong>
+        <form th:action="@{/logout}" method="post" class="inline">
+            <button type="submit" class="link">Sign out</button>
+        </form>
+    </div>
+</header>
+
+<main class="wrap">
+    <h1>Your access requests</h1>
+    <p class="lede">
+        This screen stands in for your phone. You're signed in as
+        <strong th:text="${customer}">user</strong>, so you only see requests addressed to you — a
+        support agent asking to act on your behalf. Approve or deny each one.
+    </p>
+
+    <p th:if="${approvals.isEmpty()}" class="card">No requests yet. This page refreshes automatically.</p>
+
+    <div th:each="a : ${approvals}" class="card">
+        <table class="kv">
+            <tr><td>Customer</td><td th:text="${a.loginHint}">user</td></tr>
+            <tr><td>Requested by (actor)</td><td th:text="${a.requestedActor}">admin</td></tr>
+            <tr><td>Message</td><td th:text="${a.bindingMessage} ?: '—'">Demo Support access request</td></tr>
+            <tr><td>Scope</td><td th:text="${a.scope}">openid delegation:admin</td></tr>
+        </table>
+
+        <div th:if="${a.state.name() == 'PENDING'}" class="actions">
+            <form th:action="@{/device/approve}" method="post" class="inline">
+                <input type="hidden" name="id" th:value="${a.id}"/>
+                <button type="submit" class="primary">Approve</button>
+            </form>
+            <form th:action="@{/device/deny}" method="post" class="inline">
+                <input type="hidden" name="id" th:value="${a.id}"/>
+                <button type="submit" class="link">Deny</button>
+            </form>
+        </div>
+        <p th:if="${a.state.name() == 'APPROVED'}" class="badge ok">✔ Approved</p>
+        <p th:if="${a.state.name() == 'DENIED'}" class="badge err">✖ Denied</p>
+    </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Demo Support — Delegated Access (CIBA)</title>
+    <link rel="stylesheet" href="/css/app.css"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">Demo Support Console</div>
+    <div class="who">
+        Signed in as <strong th:text="${adminUsername}">admin</strong>
+        <form th:action="@{/logout}" method="post" class="inline">
+            <button type="submit" class="link">Sign out</button>
+        </form>
+    </div>
+</header>
+
+<main class="wrap">
+    <h1>Request delegated access to a customer account</h1>
+    <p class="lede">
+        You (<span th:text="${adminUsername}">admin</span>) are the <b>actor</b>. When you submit, the
+        customer receives an approval prompt (CIBA). Once they approve, Keycloak issues a token that
+        proves <i>"<span th:text="${adminUsername}">admin</span> acting on behalf of the customer"</i>.
+    </p>
+
+    <form th:action="@{/delegate}" method="post" class="card">
+        <label>
+            Customer username
+            <input type="text" name="targetUser" placeholder="user" required autofocus/>
+        </label>
+        <label>
+            Message shown on their device (optional)
+            <input type="text" name="bindingMessage" placeholder="Demo Support access request"/>
+        </label>
+        <button type="submit" class="primary">Request approval &amp; delegate</button>
+    </form>
+
+    <!-- Error -->
+    <div th:if="${error}" class="card error">
+        <h3>Something went wrong</h3>
+        <pre th:text="${error}"></pre>
+    </div>
+
+    <!-- Result -->
+    <div th:if="${result}" class="card success">
+        <h3>Delegated token issued ✔</h3>
+        <table class="kv">
+            <tr><td>Subject (acting for)</td><td th:text="${result.subject}">user</td></tr>
+            <tr><td>Permission — <code>may_act.sub</code> (on the subject token)</td>
+                <td th:text="${result.mayActSub}">4d07…</td></tr>
+            <tr><td>Actor — <code>act.sub</code> (on the delegated token)</td>
+                <td th:text="${result.actor}">4d07…</td></tr>
+            <tr><td>Scopes</td><td th:text="${result.scope}">profile email</td></tr>
+        </table>
+        <p class="lede">
+            Same id in both rows: the exchange checked <code>may_act</code> ("admin <i>may</i> act") on the
+            customer's token and rewrote it as <code>act</code> ("admin <i>is</i> acting") on the new token.
+        </p>
+        <details>
+            <summary>Subject token from CIBA — carries <code>may_act</code></summary>
+            <pre th:text="${result.decodedSubjectToken}">{ ... }</pre>
+        </details>
+        <details open>
+            <summary>Delegated token — the result, carries <code>act</code></summary>
+            <pre th:text="${result.decodedToken}">{ ... }</pre>
+        </details>
+    </div>
+</main>
+</body>
+</html>
