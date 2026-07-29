@@ -63,8 +63,57 @@ create_user user user User Customer
 create_user user2   user2   User2   Customer
 create_user admin  admin  Admin  Support
 
-echo "==> Granting 'admin' the realm-management 'impersonation' role (required to act for users)"
-"$KCADM" add-roles -r "$REALM" --uusername admin --cclientid realm-management --rolename impersonation
+# How 'admin' is allowed to act for users:
+#   default    -> the blanket realm-management 'impersonation' role — admin can act for ANY user.
+#   USE_FGAP=true -> Fine-Grained Admin Permissions v2 (group-based): 'admin' joins an 'impersonator'
+#                    group that may impersonate members of an 'impersonated' group; 'user' is a member,
+#                    'user2' is not — the per-user "sad path". Needs Keycloak fix keycloak/keycloak#51254.
+if [ "${USE_FGAP:-false}" = "true" ]; then
+  echo "==> FGAP mode (groups): 'impersonator' group may impersonate members of 'impersonated' (needs Keycloak fix #51254)"
+  ATOKEN=$(curl -s -X POST "$KC_URL/realms/master/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id=admin-cli -d username="$KC_ADMIN" -d password="$KC_ADMIN_PASSWORD" \
+    | jq -r '.access_token // empty')
+  [ -n "$ATOKEN" ] || { echo "ERROR: could not obtain an admin token for the FGAP setup"; exit 1; }
+  api() { curl -s -H "Authorization: Bearer $ATOKEN" -H "Content-Type: application/json" "$@"; }
+
+  # the blanket role must NOT be present, so FGAP is the only grant
+  "$KCADM" remove-roles -r "$REALM" --uusername admin --cclientid realm-management --rolename impersonation 2>/dev/null || true
+
+  # turn on Admin Permissions (FGAP v2) and find its client + the user ids
+  api -o /dev/null -X PUT -d "{\"realm\":\"$REALM\",\"adminPermissionsEnabled\":true}" "$KC_URL/admin/realms/$REALM"
+  APC=$(api "$KC_URL/admin/realms/$REALM" | jq -r '.adminPermissionsClient.id')
+  ADMIN_ID=$(api "$KC_URL/admin/realms/$REALM/users?username=admin&exact=true" | jq -r '.[0].id')
+  USER_ID=$(api "$KC_URL/admin/realms/$REALM/users?username=user&exact=true" | jq -r '.[0].id')
+  AUTHZ="$KC_URL/admin/realms/$REALM/clients/$APC/authz/resource-server"
+
+  # two groups: 'impersonator' (the admins) and 'impersonated' (users that may be impersonated)
+  group_id() { api "$KC_URL/admin/realms/$REALM/groups?search=$1" | jq -r --arg n "$1" 'first(.[] | select(.name==$n) | .id) // empty'; }
+  IMPR_GID=$(group_id impersonator)
+  [ -n "$IMPR_GID" ] || { api -o /dev/null -X POST "$KC_URL/admin/realms/$REALM/groups" -d '{"name":"impersonator"}'; IMPR_GID=$(group_id impersonator); }
+  IMPD_GID=$(group_id impersonated)
+  [ -n "$IMPD_GID" ] || { api -o /dev/null -X POST "$KC_URL/admin/realms/$REALM/groups" -d '{"name":"impersonated"}'; IMPD_GID=$(group_id impersonated); }
+
+  # membership: admin -> impersonator, user -> impersonated ('user2' is deliberately left out)
+  api -o /dev/null -X PUT "$KC_URL/admin/realms/$REALM/users/$ADMIN_ID/groups/$IMPR_GID"
+  api -o /dev/null -X PUT "$KC_URL/admin/realms/$REALM/users/$USER_ID/groups/$IMPD_GID"
+
+  # policy: members of the 'impersonator' group are allowed impersonators
+  POLICY_ID=$(api "$AUTHZ/policy?name=impersonator-group" | jq -r '.[0].id // empty')
+  if [ -z "$POLICY_ID" ]; then
+    POLICY_ID=$(api -X POST "$AUTHZ/policy/group" \
+      -d "{\"name\":\"impersonator-group\",\"logic\":\"POSITIVE\",\"groups\":[{\"id\":\"$IMPR_GID\",\"extendChildren\":false}]}" | jq -r '.id // empty')
+  fi
+
+  # permission: allow scope 'impersonate-members' on the 'impersonated' group via that policy
+  if [ -z "$(api "$AUTHZ/permission?name=impersonator-permission" | jq -r '.[0].id // empty')" ]; then
+    api -o /dev/null -X POST "$AUTHZ/permission/scope" \
+      -d "{\"name\":\"impersonator-permission\",\"resourceType\":\"Groups\",\"resources\":[\"$IMPD_GID\"],\"scopes\":[\"impersonate-members\"],\"policies\":[\"$POLICY_ID\"]}"
+  fi
+  echo "    -> delegation will succeed for 'user' (in 'impersonated') and fail for 'user2' (not in it)"
+else
+  echo "==> Granting 'admin' the realm-management 'impersonation' role (admin can act for ANY user)"
+  "$KCADM" add-roles -r "$REALM" --uusername admin --cclientid realm-management --rolename impersonation
+fi
 
 # --------------------------------------------------------------------------- demo-admin-app
 # Admin logs in here (authorization_code). His access token is the actor_token. The audience mapper
